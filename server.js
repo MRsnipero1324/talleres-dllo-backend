@@ -2,7 +2,7 @@ const express = require('express');
 const app = express();
 const port = 3000;
 
-app.use(express.json()); // Necesario para leer req.body
+app.use(express.json()); 
 
 const taller1Routes = require('./routes/taller-1');
 app.use('/taller1', taller1Routes);
