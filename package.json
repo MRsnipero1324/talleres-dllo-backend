@@ -1,0 +1,23 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "Taller-02.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MRsnipero1324/talleres-dllo-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/MRsnipero1324/talleres-dllo-backend/issues"
+  },
+  "homepage": "https://github.com/MRsnipero1324/talleres-dllo-backend#readme",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
