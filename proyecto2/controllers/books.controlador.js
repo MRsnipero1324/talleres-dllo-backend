@@ -1,33 +1,48 @@
 import { db } from "../utils/db.js";
 
-// CREATE (solo permisos)
-export function createBook(req, res) {
-  if (!req.user.permissions.create_books)
-    return res.status(403).json({ error: "No autorizado" });
+/**
+ * CREATE BOOK
+ */
+export function createBook(data, userPermissions) {
+  if (!userPermissions?.create_books)
+    throw new Error("No autorizado");
 
   const book = {
     id: db.books.length + 1,
-    ...req.body,
+    ...data,
     deleted: false,
-    reserved_by: [],
+    reserved_by: [] // historial
   };
 
   db.books.push(book);
-  res.json({ msg: "Libro creado", book });
+  return book;
 }
 
-// READ 1 libro
-export function getBook(req, res) {
-  const book = db.books.find(b => b.id == req.params.id && !b.deleted);
-  if (!book) return res.status(404).json({ error: "Libro no encontrado" });
 
-  res.json(book);
+/**
+ * GET ONE BOOK
+ */
+export function getBook(bookId) {
+  const book = db.books.find(b => b.id == bookId && !b.deleted);
+  if (!book) throw new Error("Libro no encontrado");
+  return book;
 }
 
-// READ * libros con filtros
-export function getBooks(req, res) {
-  let { genero, fecha, editorial, autor, nombre, disponible, page = 1, limit = 10 } =
-    req.query;
+
+/**
+ * GET MANY BOOKS (filtros + paginación)
+ */
+export function readBooks(filters) {
+  let {
+    genero,
+    fecha,
+    editorial,
+    autor,
+    nombre,
+    disponible,
+    page = 1,
+    limit = 10
+  } = filters;
 
   let books = db.books.filter(b => !b.deleted);
 
@@ -41,34 +56,66 @@ export function getBooks(req, res) {
   const start = (page - 1) * limit;
   const paginated = books.slice(start, start + limit);
 
-  res.json({
+  return {
     libros: paginated.map(b => b.nombre),
-    pagina_actual: page,
+    pagina_actual: Number(page),
     pagina_maxima: Math.ceil(books.length / limit),
-    por_pagina: limit,
-  });
+    por_pagina: Number(limit)
+  };
 }
 
-// UPDATE libro
-export function updateBook(req, res) {
-  if (!req.user.permissions.edit_books)
-    return res.status(403).json({ error: "No autorizado" });
 
-  const book = db.books.find(b => b.id == req.params.id && !b.deleted);
-  if (!book) return res.status(404).json({ error: "Libro no encontrado" });
+/**
+ * UPDATE BOOK
+ */
+export function updateBook(bookId, updates, userPermissions) {
+  if (!userPermissions?.edit_books)
+    throw new Error("No autorizado");
 
-  Object.assign(book, req.body);
-  res.json({ msg: "Libro actualizado", book });
+  const book = db.books.find(b => b.id == bookId && !b.deleted);
+  if (!book) throw new Error("Libro no encontrado");
+
+  Object.assign(book, updates);
+  return book;
 }
 
-// DELETE libro (Soft)
-export function deleteBook(req, res) {
-  if (!req.user.permissions.delete_books)
-    return res.status(403).json({ error: "No autorizado" });
 
-  const book = db.books.find(b => b.id == req.params.id);
-  if (!book) return res.status(404).json({ error: "Libro no encontrado" });
+/**
+ * DELETE BOOK (soft delete)
+ */
+export function deleteBook(bookId, userPermissions) {
+  if (!userPermissions?.delete_books)
+    throw new Error("No autorizado");
+
+  const book = db.books.find(b => b.id == bookId);
+  if (!book) throw new Error("Libro no encontrado");
 
   book.deleted = true;
-  res.json({ msg: "Libro inhabilitado" });
+  return true;
+}
+
+
+/**
+ * RESERVE BOOK (historial libro + usuario)
+ */
+export function reserveBook(bookId, user) {
+  const book = db.books.find(b => b.id == bookId && !b.deleted);
+  if (!book) throw new Error("Libro no encontrado");
+
+  const reservation = {
+    user_id: user.id,
+    user_name: user.name,
+    fecha_reserva: new Date().toISOString(),
+    fecha_entrega: null
+  };
+
+  book.reserved_by.push(reservation);
+  user.history.push({
+    book_id: book.id,
+    book_name: book.nombre,
+    fecha_reserva: reservation.fecha_reserva,
+    fecha_entrega: null
+  });
+
+  return reservation;
 }

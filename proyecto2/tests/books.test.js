@@ -1,33 +1,30 @@
-/**
- * Tests para Books Controller
- * Cada función debe ser probada:
- *  - Caso exitoso
- *  - Caso fallido por validación
- */
+import { jest } from "@jest/globals";
 
 import {
   createBook,
+  readBooks,
   getBook,
-  getBooks,
   updateBook,
-  deleteBook
+  deleteBook,
+  reserveBook
 } from "../controllers/books.controlador.js";
 
 import { db } from "../utils/db.js";
-import { jest } from '@jest/globals';
 
 
-
-// Simular res
-function mockResponse() {
-  const res = {};
-  res.status = jest.fn().mockReturnValue(res);
-  res.json = jest.fn().mockReturnValue(res);
-  return res;
+// Utilidad para simular un usuario
+function createUserMock(id = 1) {
+  return {
+    id,
+    name: "Usuario Test",
+    permissions: {},
+    history: []
+  };
 }
 
 beforeEach(() => {
   db.books.length = 0;
+  db.users = [createUserMock(1)];
 });
 
 
@@ -35,107 +32,76 @@ beforeEach(() => {
 // CREATE BOOK
 // -----------------------------
 describe("createBook()", () => {
-  test(" Crear libro exitosamente con permisos", () => {
-    const req = {
-      user: { id: 1, permissions: { create_books: true } },
-      body: { nombre: "Libro A", autor: "Juan", disponible: true }
-    };
-    const res = mockResponse();
+  test("✔ Crea un libro exitosamente con permisos", () => {
+    const permissions = { create_books: true };
 
-    createBook(req, res);
+    const book = createBook(
+      { nombre: "Libro A", autor: "Juan", disponible: true },
+      permissions
+    );
 
-    expect(res.json).toHaveBeenCalled();
+    expect(book.nombre).toBe("Libro A");
     expect(db.books.length).toBe(1);
   });
 
-  test(" Fallo al crear libro sin permisos", () => {
-    const req = {
-      user: { id: 1, permissions: {} },
-      body: { nombre: "Libro A" }
-    };
-    const res = mockResponse();
+  test("✘ Falla al crear sin permisos", () => {
+    const permissions = {};
 
-    createBook(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(403);
+    expect(() =>
+      createBook({ nombre: "Libro A" }, permissions)
+    ).toThrow("No autorizado");
   });
 });
 
 
 // -----------------------------
-// GET ONE BOOK
+// GET ONE
 // -----------------------------
 describe("getBook()", () => {
   beforeEach(() => {
     db.books.push({
       id: 1,
       nombre: "Libro A",
-      autor: "Juan",
-      disponible: true,
       deleted: false
     });
   });
 
-  test(" Obtener un libro existente", () => {
-    const req = { params: { id: 1 } };
-    const res = mockResponse();
-
-    getBook(req, res);
-
-    expect(res.json).toHaveBeenCalled();
-    expect(res.json.mock.calls[0][0].nombre).toBe("Libro A");
+  test("✔ Obtiene un libro existente", () => {
+    const book = getBook(1);
+    expect(book.nombre).toBe("Libro A");
   });
 
-  test(" Fallo al pedir libro inexistente", () => {
-    const req = { params: { id: 99 } };
-    const res = mockResponse();
-
-    getBook(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
+  test("✘ Falla si el libro no existe", () => {
+    expect(() => getBook(99)).toThrow("Libro no encontrado");
   });
 });
 
 
 // -----------------------------
-// GET MANY BOOKS (con filtros + paginación)
+// GET MANY (Filtros + paginación)
 // -----------------------------
-describe("getBooks()", () => {
+describe("readBooks()", () => {
   beforeEach(() => {
     db.books.push(
-      { id: 1, nombre: "Libro A", genero: "Aventura", autor: "Juan", disponible: true, deleted: false },
-      { id: 2, nombre: "Libro B", genero: "Horror", autor: "Pedro", disponible: false, deleted: false }
+      { id: 1, nombre: "Libro A", genero: "Aventura", deleted: false },
+      { id: 2, nombre: "Libro B", genero: "Horror", deleted: false }
     );
   });
 
-  test(" Obtener libros sin filtros", () => {
-    const req = { query: {} };
-    const res = mockResponse();
-
-    getBooks(req, res);
-
-    expect(res.json).toHaveBeenCalled();
-    expect(res.json.mock.calls[0][0].libros.length).toBe(2);
+  test("✔ Obtiene libros sin filtros", () => {
+    const result = readBooks({});
+    expect(result.libros.length).toBe(2);
   });
 
-  test(" Filtrar por género", () => {
-    const req = { query: { genero: "Aventura" } };
-    const res = mockResponse();
-
-    getBooks(req, res);
-
-    expect(res.json).toHaveBeenCalled();
-    expect(res.json.mock.calls[0][0].libros[0]).toBe("Libro A");
+  test("✔ Filtra por género", () => {
+    const result = readBooks({ genero: "Aventura" });
+    expect(result.libros).toContain("Libro A");
+    expect(result.libros.length).toBe(1);
   });
 
-  test(" Filtrar por género inexistente (regresa vacío)", () => {
-    const req = { query: { genero: "SciFi" } };
-    const res = mockResponse();
-
-    getBooks(req, res);
-
-    expect(res.json).toHaveBeenCalled();
-    expect(res.json.mock.calls[0][0].libros.length).toBe(0);
+  test("✔ Filtrado vacío si no hay coincidencias", () => {
+    const result = readBooks({ genero: "SciFi" });
+    expect(result.libros.length).toBe(0);
   });
 });
 
@@ -148,58 +114,38 @@ describe("updateBook()", () => {
     db.books.push({
       id: 1,
       nombre: "Libro A",
-      autor: "Juan",
-      disponible: true,
       deleted: false
     });
   });
 
-  test(" Actualizar libro con permisos", () => {
-    const req = {
-      params: { id: 1 },
-      user: { permissions: { edit_books: true } },
-      body: { nombre: "Libro A Editado" }
-    };
+  test("✔ Actualiza un libro con permisos", () => {
+    const permissions = { edit_books: true };
 
-    const res = mockResponse();
-    updateBook(req, res);
+    const updated = updateBook(1, { nombre: "Nuevo nombre" }, permissions);
 
-    expect(res.json).toHaveBeenCalled();
-    expect(db.books[0].nombre).toBe("Libro A Editado");
+    expect(updated.nombre).toBe("Nuevo nombre");
   });
 
-  test(" Fallo actualizar libro sin permisos", () => {
-    const req = {
-      params: { id: 1 },
-      user: { permissions: {} },
-      body: { nombre: "Nuevo" }
-    };
+  test("✘ Falla sin permisos", () => {
+    const permissions = {};
 
-    const res = mockResponse();
-
-    updateBook(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(403);
+    expect(() =>
+      updateBook(1, { nombre: "Nuevo" }, permissions)
+    ).toThrow("No autorizado");
   });
 
-  test(" Fallo libro no encontrado", () => {
-    const req = {
-      params: { id: 99 },
-      user: { permissions: { edit_books: true } },
-      body: { nombre: "Nuevo" }
-    };
+  test("✘ Falla si el libro no existe", () => {
+    const permissions = { edit_books: true };
 
-    const res = mockResponse();
-
-    updateBook(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
+    expect(() =>
+      updateBook(99, { nombre: "Nuevo" }, permissions)
+    ).toThrow("Libro no encontrado");
   });
 });
 
 
 // -----------------------------
-// DELETE BOOK (soft delete)
+// DELETE BOOK (SOFT DELETE)
 // -----------------------------
 describe("deleteBook()", () => {
   beforeEach(() => {
@@ -210,42 +156,56 @@ describe("deleteBook()", () => {
     });
   });
 
-  test(" Inhabilitar libro con permisos (soft delete)", () => {
-    const req = {
-      params: { id: 1 },
-      user: { permissions: { delete_books: true } }
-    };
+  test("✔ Inhabilita un libro con permisos", () => {
+    const permissions = { delete_books: true };
 
-    const res = mockResponse();
+    deleteBook(1, permissions);
 
-    deleteBook(req, res);
-
-    expect(res.json).toHaveBeenCalled();
     expect(db.books[0].deleted).toBe(true);
   });
 
-  test(" Fallo al inhabilitar sin permisos", () => {
-    const req = {
-      params: { id: 1 },
-      user: { permissions: {} }
-    };
-    const res = mockResponse();
-
-    deleteBook(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(403);
+  test("✘ Falla sin permisos", () => {
+    expect(() =>
+      deleteBook(1, {})
+    ).toThrow("No autorizado");
   });
 
-  test(" Fallo libro no encontrado", () => {
-    const req = {
-      params: { id: 99 },
-      user: { permissions: { delete_books: true } }
-    };
+  test("✘ Falla si el libro no existe", () => {
+    const permissions = { delete_books: true };
 
-    const res = mockResponse();
+    expect(() => deleteBook(99, permissions)).toThrow("Libro no encontrado");
+  });
+});
 
-    deleteBook(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(404);
+// -----------------------------
+// RESERVE BOOK (HISTORIAL)
+// -----------------------------
+describe("reserveBook()", () => {
+  beforeEach(() => {
+    db.books.push({
+      id: 1,
+      nombre: "Libro A",
+      deleted: false,
+      reserved_by: []
+    });
+
+    db.users[0] = createUserMock(1);
+  });
+
+  test("✔ Reserva un libro correctamente y llena historial", () => {
+    const user = db.users[0];
+
+    const reservation = reserveBook(1, user);
+
+    expect(reservation.user_id).toBe(1);
+    expect(user.history.length).toBe(1);
+    expect(db.books[0].reserved_by.length).toBe(1);
+  });
+
+  test("✘ Falla si el libro no existe", () => {
+    const user = db.users[0];
+
+    expect(() => reserveBook(99, user)).toThrow("Libro no encontrado");
   });
 });

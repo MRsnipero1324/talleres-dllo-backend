@@ -1,79 +1,99 @@
 import { db } from "../utils/db.js";
 import { generateToken } from "../utils/auth.js";
 
-// CREATE (registro)
-export function createUser(req, res) {
-  const { name, email, password, permissions = {} } = req.body;
+
+/**
+ * CREATE USER (registro)
+ */
+export function createUser(data) {
+  const { email, password, name, permissions = {} } = data;
 
   if (!email || !password)
-    return res.status(400).json({ error: "Email y password requeridos" });
+    throw new Error("Email y password requeridos");
 
   const exists = db.users.find(u => u.email === email);
-  if (exists) return res.status(400).json({ error: "Usuario ya existe" });
+  if (exists) throw new Error("Usuario ya existe");
 
   const user = {
     id: db.users.length + 1,
-    name,
     email,
     password,
+    name,
     permissions,
     deleted: false,
-    history: []
+    history: [] // historial de reservas
   };
 
   db.users.push(user);
-  res.json({ msg: "Usuario creado", user });
+  return user;
 }
 
-// LOGIN (READ seguro)
-export function login(req, res) {
-  const { email, password } = req.body;
 
+/**
+ * LOGIN (crear token)
+ */
+export function loginUser(email, password) {
   const user = db.users.find(
     u => u.email === email && u.password === password && !u.deleted
   );
 
-  if (!user) return res.status(400).json({ error: "Credenciales inválidas" });
+  if (!user) throw new Error("Credenciales inválidas");
 
-  const token = generateToken({ id: user.id, permissions: user.permissions });
+  const token = generateToken({
+    id: user.id,
+    permissions: user.permissions
+  });
 
-  res.json({ token });
+  return { token };
 }
 
-// READ user info
-export function getUser(req, res) {
-  const user = db.users.find(u => u.id === req.user.id && !u.deleted);
-  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-  res.json(user);
+/**
+ * GET ONE USER (autenticado)
+ */
+export function getUserById(userId) {
+  const user = db.users.find(u => u.id == userId && !u.deleted);
+  if (!user) throw new Error("Usuario no encontrado");
+  return user;
 }
 
-// UPDATE user
-export function updateUser(req, res) {
-  const { id } = req.params;
-  const user = db.users.find(u => u.id == id && !u.deleted);
 
-  if (!user) return res.status(404).json({ error: "Usuario no existe" });
+/**
+ * UPDATE USER
+ * Solo el mismo usuario o uno con permiso "edit_users"
+ */
+export function updateUser(userId, updates, requester) {
+  const user = db.users.find(u => u.id == userId && !u.deleted);
+  if (!user) throw new Error("Usuario no existe");
 
-  // Permiso o propietario
-  if (req.user.id != id && !req.user.permissions.edit_users)
-    return res.status(403).json({ error: "No autorizad" });
+  if (requester.id != userId && !requester.permissions?.edit_users)
+    throw new Error("No autorizado");
 
-  Object.assign(user, req.body);
-  res.json({ msg: "Usuario actualizado", user });
+  Object.assign(user, updates);
+  return user;
 }
 
-// DELETE (Soft delete)
-export function deleteUser(req, res) {
-  const { id } = req.params;
-  const user = db.users.find(u => u.id == id);
 
-  if (!user) return res.status(404).json({ error: "Usuario no existe" });
+export function getUserHistory(userId) {
+  const user = db.users.find(u => u.id == userId && !u.deleted);
+  if (!user) throw new Error("Usuario no encontrado");
 
-  // Permiso o propietario
-  if (req.user.id != id && !req.user.permissions.delete_users)
-    return res.status(403).json({ error: "No autorizado" });
+  return user.history;
+}
+
+
+
+/**
+ * DELETE USER (soft delete)
+ * Solo el mismo usuario o uno con permiso "delete_users"
+ */
+export function deleteUser(userId, requester) {
+  const user = db.users.find(u => u.id == userId);
+  if (!user) throw new Error("Usuario no existe");
+
+  if (requester.id != userId && !requester.permissions?.delete_users)
+    throw new Error("No autorizado");
 
   user.deleted = true;
-  res.json({ msg: "Usuario inhabilitado" });
+  return true;
 }

@@ -1,86 +1,56 @@
-/**
- * Tests para Users Controller
- * Cada función:
- *  - Caso exitoso
- *  - Caso fallido por validación
- */
+import { jest } from "@jest/globals";
 
 import {
   createUser,
-  login,
-  getUser,
+  loginUser,
+  getUserById,
   updateUser,
   deleteUser
 } from "../controllers/users.controlador.js";
 
 import { db } from "../utils/db.js";
-import { jest } from '@jest/globals';
 
-
-
-
-// Utilidad para simular req/res
-function mockResponse() {
-  const res = {};
-  res.status = jest.fn().mockReturnValue(res);
-  res.json = jest.fn().mockReturnValue(res);
-  return res;
-}
 
 beforeEach(() => {
-  // Reiniciar base de datos en cada test
   db.users.length = 0;
 });
 
 
-// -----------------------------
-// CREATE USER
-// -----------------------------
+/**
+ * CREATE USER
+ */
 describe("createUser()", () => {
-  test(" Crear usuario exitosamente", () => {
-    const req = {
-      body: { email: "test@mail.com", password: "1234", name: "Juan" }
-    };
-    const res = mockResponse();
+  test("✔ crea un usuario correctamente", () => {
+    const user = createUser({
+      email: "test@mail.com",
+      password: "1234",
+      name: "Juan"
+    });
 
-    createUser(req, res);
-
-    expect(res.json).toHaveBeenCalled();
+    expect(user.email).toBe("test@mail.com");
     expect(db.users.length).toBe(1);
   });
 
-  test(" Fallo al crear usuario sin email", () => {
-    const req = { body: { password: "1234" } };
-    const res = mockResponse();
-
-    createUser(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
+  test("✘ falla por email faltante", () => {
+    expect(() =>
+      createUser({ password: "1234" })
+    ).toThrow("Email y password requeridos");
   });
 
-  test(" Fallo por usuario duplicado", () => {
-    db.users.push({
-      id: 1,
-      email: "test@mail.com",
-      password: "1234"
-    });
+  test("✘ falla por usuario duplicado", () => {
+    createUser({ email: "test@mail.com", password: "123" });
 
-    const req = {
-      body: { email: "test@mail.com", password: "abcd" }
-    };
-    const res = mockResponse();
-
-    createUser(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
+    expect(() =>
+      createUser({ email: "test@mail.com", password: "abc" })
+    ).toThrow("Usuario ya existe");
   });
 });
 
 
-// -----------------------------
-// LOGIN
-// -----------------------------
-describe("login()", () => {
+/**
+ * LOGIN USER
+ */
+describe("loginUser()", () => {
   beforeEach(() => {
     db.users.push({
       id: 1,
@@ -91,147 +61,140 @@ describe("login()", () => {
     });
   });
 
-  test(" Login exitoso", () => {
-    const req = {
-      body: { email: "test@mail.com", password: "1234" }
-    };
-    const res = mockResponse();
-
-    login(req, res);
-
-    expect(res.json).toHaveBeenCalled();
-    expect(res.json.mock.calls[0][0]).toHaveProperty("token");
+  test("✔ login exitoso devuelve token", () => {
+    const { token } = loginUser("test@mail.com", "1234");
+    expect(token).toBeDefined();
   });
 
-  test(" Login falla por credenciales incorrectas", () => {
-    const req = {
-      body: { email: "test@mail.com", password: "xxx" }
-    };
-    const res = mockResponse();
-
-    login(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
+  test("✘ falla por credenciales", () => {
+    expect(() =>
+      loginUser("test@mail.com", "wrong")
+    ).toThrow("Credenciales inválidas");
   });
 });
 
 
-// -----------------------------
-// GET USER
-// -----------------------------
-describe("getUser()", () => {
+/**
+ * GET USER
+ */
+describe("getUserById()", () => {
   beforeEach(() => {
     db.users.push({
       id: 1,
-      email: "test@mail.com",
-      password: "1234",
+      email: "a@mail.com",
+      password: "123",
       name: "Juan",
       deleted: false
     });
   });
 
-  test(" Obtiene información del usuario", () => {
-    const req = { user: { id: 1 } };
-    const res = mockResponse();
-
-    getUser(req, res);
-
-    expect(res.json).toHaveBeenCalled();
-    expect(res.json.mock.calls[0][0].email).toBe("test@mail.com");
+  test("✔ retorna usuario correcto", () => {
+    const user = getUserById(1);
+    expect(user.name).toBe("Juan");
   });
 
-  test(" Fallo si el usuario no existe", () => {
-    const req = { user: { id: 99 } };
-    const res = mockResponse();
-
-    getUser(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
+  test("✘ falla si no existe", () => {
+    expect(() => getUserById(999)).toThrow("Usuario no encontrado");
   });
 });
 
 
-// -----------------------------
-// UPDATE USER
-// -----------------------------
+/**
+ * UPDATE USER
+ */
 describe("updateUser()", () => {
   beforeEach(() => {
     db.users.push({
       id: 1,
-      email: "test@mail.com",
-      password: "1234",
       name: "Juan",
-      deleted: false
+      deleted: false,
+      permissions: {}
     });
   });
 
-  test(" Usuario se actualiza correctamente (el mismo usuario)", () => {
-    const req = {
-      params: { id: 1 },
-      user: { id: 1, permissions: {} },
-      body: { name: "Pedro" }
-    };
+  test("✔ usuario se actualiza a sí mismo", () => {
+    const requester = { id: 1, permissions: {} };
 
-    const res = mockResponse();
-    updateUser(req, res);
+    const updated = updateUser(1, { name: "Pedro" }, requester);
 
-    expect(res.json).toHaveBeenCalled();
-    expect(db.users[0].name).toBe("Pedro");
+    expect(updated.name).toBe("Pedro");
   });
 
-  test(" Fallo por no tener permisos ni ser el usuario dueño", () => {
-    const req = {
-      params: { id: 1 },
-      user: { id: 2, permissions: {} },
-      body: { name: "Nuevo" }
-    };
+  test("✔ admin actualiza usuario", () => {
+    const requester = { id: 99, permissions: { edit_users: true } };
 
-    const res = mockResponse();
+    const updated = updateUser(1, { name: "AdminChange" }, requester);
 
-    updateUser(req, res);
+    expect(updated.name).toBe("AdminChange");
+  });
 
-    expect(res.status).toHaveBeenCalledWith(403);
+  test("✘ falla sin permisos ni ser dueño", () => {
+    const requester = { id: 99, permissions: {} };
+
+    expect(() =>
+      updateUser(1, { name: "X" }, requester)
+    ).toThrow("No autorizado");
   });
 });
 
 
-// -----------------------------
-// DELETE USER (soft delete)
-// -----------------------------
+
+describe("getUserHistory()", () => {
+  beforeEach(() => {
+    db.users.push({
+      id: 1,
+      deleted: false,
+      history: [
+        { book_id: 1, book_name: "Libro A", fecha_reserva: "2024-01-01", fecha_entrega: null }
+      ]
+    });
+  });
+
+  test("✔ retorna historial correctamente", () => {
+    const history = getUserHistory(1);
+
+    expect(history.length).toBe(1);
+    expect(history[0].book_name).toBe("Libro A");
+  });
+
+  test("✘ falla si el usuario no existe", () => {
+    expect(() => getUserHistory(99)).toThrow("Usuario no encontrado");
+  });
+});
+
+/**
+ * DELETE USER
+ */
 describe("deleteUser()", () => {
   beforeEach(() => {
     db.users.push({
       id: 1,
-      email: "test@mail.com",
-      password: "1234",
-      deleted: false
+      deleted: false,
+      permissions: {}
     });
   });
 
-  test(" Usuario se inhabilita (soft delete) exitosamente", () => {
-    const req = {
-      params: { id: 1 },
-      user: { id: 1, permissions: {} }
-    };
+  test("✔ usuario se elimina a sí mismo (soft delete)", () => {
+    const requester = { id: 1, permissions: {} };
 
-    const res = mockResponse();
+    deleteUser(1, requester);
 
-    deleteUser(req, res);
-
-    expect(res.json).toHaveBeenCalled();
     expect(db.users[0].deleted).toBe(true);
   });
 
-  test(" Fallo al intentar inhabilitar sin permisos ni ser el dueño", () => {
-    const req = {
-      params: { id: 1 },
-      user: { id: 2, permissions: {} }
-    };
+  test("✔ admin puede eliminar", () => {
+    const requester = { id: 99, permissions: { delete_users: true } };
 
-    const res = mockResponse();
+    deleteUser(1, requester);
 
-    deleteUser(req, res);
+    expect(db.users[0].deleted).toBe(true);
+  });
 
-    expect(res.status).toHaveBeenCalledWith(403);
+  test("✘ falla sin permisos", () => {
+    const requester = { id: 99, permissions: {} };
+
+    expect(() =>
+      deleteUser(1, requester)
+    ).toThrow("No autorizado");
   });
 });
