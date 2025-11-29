@@ -57,7 +57,7 @@ export function updateUser(req, res) {
 
   // Permiso o propietario
   if (req.user.id != id && !req.user.permissions.edit_users)
-    return res.status(403).json({ error: "No autorizado" });
+    return res.status(403).json({ error: "No autorizad" });
 
   Object.assign(user, req.body);
   res.json({ msg: "Usuario actualizado", user });
